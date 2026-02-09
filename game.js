@@ -1,14 +1,14 @@
-const TILE_SIZE = 16;
-const MAP_WIDTH = 400;
-const MAP_HEIGHT = 400;
+const TILE_SIZE = 24;
+const MAP_WIDTH = 100;
+const MAP_HEIGHT = 1000;
+const MAX_STACK = 8;
+const HOTBAR_SLOTS = 5;
 
 const ITEM = {
   GOLD: "gold",
-  IRON: "iron"
+  IRON: "iron",
+  COIN: "coin"
 };
-
-const MAX_STACK = 8;
-const HOTBAR_SLOTS = 5;
 
 const TILE = {
   EMPTY: 0,
@@ -16,11 +16,11 @@ const TILE = {
   STONE: 2,
   ORE: 3,
   IRON: 4,
-  GOLD: 5
+  GOLD: 5,
+  COIN: 6
 };
 
 const notyf = new Notyf({ duration: 5000 }); // 5000ms = 5s
-
 
 class GameScene extends Phaser.Scene {
   constructor() {
@@ -64,18 +64,22 @@ class GameScene extends Phaser.Scene {
     this.coins = 0;
     this.digPower = 1;
 
-    this.shop = this.add.rectangle(400, 40, 120, 40, 0x4444aa)
-    .setScrollFactor(0);
+    this.keys = this.input.keyboard.addKeys({
+        up: Phaser.Input.Keyboard.KeyCodes.W,
+        down: Phaser.Input.Keyboard.KeyCodes.S,
+        left: Phaser.Input.Keyboard.KeyCodes.A,
+        right: Phaser.Input.Keyboard.KeyCodes.D
+    });
 
-    this.shopText = this.add.text(350, 30, "SHOP (E)", {
+    this.shopText = this.add.text(500, 10, "Press E to shop", {
         fontSize: "14px",
         color: "#ffffff"
     }).setScrollFactor(0);
 
     this.hudText = this.add.text(10, 10, "", {
         fontSize: "14px",
-        color: "#ffffff"
-    }).setScrollFactor(0);
+        color: "#ffffff",
+    }).setScrollFactor(0).setDepth(1000);
 
     this.keyE = this.input.keyboard.addKey("E");
 
@@ -101,7 +105,7 @@ class GameScene extends Phaser.Scene {
 
 
         // cavernas
-        if (y > 12 && Math.random() < 0.05) tile = TILE.EMPTY;
+        if (y > 12 && Math.random() < 0.05) tile = TILE.COIN;
 
         if (y > 13 && Math.random() < 0.03) tile = TILE.IRON;
         if (y > 13 && Math.random() < 0.02) tile = TILE.GOLD;
@@ -119,7 +123,7 @@ class GameScene extends Phaser.Scene {
     ================================================= */
 
     this.player = this.add.rectangle(
-        MAP_WIDTH * TILE_SIZE / 2,
+        MAP_WIDTH * TILE_SIZE * 0.5,
         5 * TILE_SIZE,
         TILE_SIZE * 0.8,
         TILE_SIZE * 0.9,
@@ -129,10 +133,17 @@ class GameScene extends Phaser.Scene {
     this.player.setStrokeStyle(2, 0x000000, 0.6);
 
     this.physics.add.existing(this.player);
+
     this.player.body.setGravityY(700);
     this.player.body.setCollideWorldBounds(true);
 
     this.physics.add.collider(this.player, this.tiles);
+        this.physics.world.setBounds(
+        0,
+        0,
+        MAP_WIDTH * TILE_SIZE,
+        MAP_HEIGHT * TILE_SIZE
+        );
 
     this.facing = 1; // 1 = direita | -1 = esquerda
 
@@ -148,11 +159,11 @@ class GameScene extends Phaser.Scene {
        CÂMERA
     ================================================= */
     this.cameras.main.startFollow(this.player);
-    this.cameras.main.setBounds(
-      0, 0,
-      MAP_WIDTH * TILE_SIZE,
-      MAP_HEIGHT * TILE_SIZE
-    );
+    // this.cameras.main.setBounds(
+    //   0, 0,
+    //   MAP_WIDTH,
+    //   MAP_HEIGHT * TILE_SIZE * 100
+    // );
     this.cameras.main.setRoundPixels(true);
 
     /* =================================================
@@ -163,20 +174,20 @@ class GameScene extends Phaser.Scene {
       gold: 0
     };
 
-this.particles = this.add.particles(
-  0,
-  0,
-  "__WHITE",
-  {
-    lifespan: 300,
-    speed: { min: 30, max: 80 },
-    scale: { start: 0.5, end: 0 },
-    gravityY: 300,
-    quantity: 5,
-    tint: 0xffffff,
-    blendMode: Phaser.BlendModes.NORMAL
-  }
-);
+    this.particles = this.add.particles(
+    0,
+    0,
+    "__WHITE",
+        {
+            lifespan: 300,
+            speed: { min: 30, max: 80 },
+            scale: { start: 0.5, end: 0 },
+            gravityY: 300,
+            quantity: 5,
+            tint: 0xffffff,
+            blendMode: Phaser.BlendModes.NORMAL
+        }
+    );
 
     this.createHUD();
   }
@@ -258,13 +269,7 @@ updateHUD() {
       hp = 6;
     }
 
-    const tile = this.add.rectangle(
-    x * TILE_SIZE,
-    y * TILE_SIZE,
-    TILE_SIZE,
-    TILE_SIZE,
-    color
-    ).setOrigin(0);
+    const tile = this.buildTile(x, y, color, type);
 
     this.physics.add.existing(tile, true);
 
@@ -276,6 +281,25 @@ updateHUD() {
     this.tiles.add(tile);
   }
 
+    buildTile(x, y, color, type) {
+        if(type === TILE.COIN) {
+            return this.add.text(
+                x * TILE_SIZE + 4,
+                y * TILE_SIZE - 2,
+                "¢",
+                { fontSize: "12px", color: "#ffff00" }
+            ).setOrigin(0);
+        }
+
+        return this.add.rectangle(
+            x * TILE_SIZE,
+            y * TILE_SIZE,
+            TILE_SIZE,
+            TILE_SIZE,
+            color
+        ).setOrigin(0);
+    }
+
 dig() {
   const px = Math.floor(this.player.x / TILE_SIZE);
   const py = Math.floor(this.player.y / TILE_SIZE);
@@ -283,11 +307,12 @@ dig() {
   let dx = 0;
   let dy = 0;
 
-  if (this.cursors.left.isDown) dx = -1;
-  else if (this.cursors.right.isDown) dx = 1;
-  else if (this.cursors.up.isDown) dy = -1;
-  else if (this.cursors.down.isDown) dy = 1;
-  else dx = this.facing; // fallback lateral
+if (this.cursors.left.isDown || this.keys.left.isDown) dx = -1;
+else if (this.cursors.right.isDown || this.keys.right.isDown) dx = 1;
+else if (this.cursors.up.isDown || this.keys.up.isDown) dy = -1;
+else if (this.cursors.down.isDown || this.keys.down.isDown) dy = 1;
+else dx = this.facing;
+
 
   const tx = px + dx;
   const ty = py + dy;
@@ -322,14 +347,17 @@ dig() {
     this.map[ty][tx] = TILE.EMPTY;
     this.tiles.remove(tile, true, true);
 
+    if (tile.tileType === TILE.COIN) {
+    notyf.success("You found a coin! +1¢");
+    this.coins += 1;
+    }
+
     if (tile.tileType === TILE.GOLD) {
     this.addItemToInventory(ITEM.GOLD, 1);
-    this.coins += 3;
     }
 
     if (tile.tileType === TILE.IRON) {
     this.addItemToInventory(ITEM.IRON, 1);
-    this.coins += 1;
     }
   }
     this.particles.emitParticleAt(
@@ -365,17 +393,24 @@ dig() {
     this.dig();
     }
 
-    if (this.cursors.left.isDown) {
-      this.player.body.setVelocityX(-speed);
-      this.facing = -1;
-    }
-    if (this.cursors.right.isDown) {
-      this.player.body.setVelocityX(speed);
-      this.facing = 1;
+    // esquerda
+    if (this.cursors.left.isDown || this.keys.left.isDown) {
+    this.player.body.setVelocityX(-speed);
+    this.facing = -1;
     }
 
-    if (this.cursors.up.isDown && this.player.body.blocked.down) {
-      this.player.body.setVelocityY(-320);
+    // direita
+        if (this.cursors.right.isDown || this.keys.right.isDown) {
+    this.player.body.setVelocityX(speed);
+    this.facing = 1;
+    }
+
+    // pulo
+    if (
+    (this.cursors.up.isDown || this.keys.up.isDown) &&
+    this.player.body.blocked.down
+    ) {
+    this.player.body.setVelocityY(-320);
     }
 
     if (Phaser.Input.Keyboard.JustDown(this.digKey)) {
@@ -402,4 +437,4 @@ const config = {
   scene: GameScene
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
