@@ -56,10 +56,28 @@ class GameScene extends Phaser.Scene {
     /* =================================================
        MAPA STEAMWORLD STYLE
     ================================================= */
+
     this.map = [];
     this.inventory = [];
     this.tiles = this.physics.add.staticGroup();
     this.digDir = { x: 0, y: 0 };
+    this.coins = 0;
+    this.digPower = 1;
+
+    this.shop = this.add.rectangle(400, 40, 120, 40, 0x4444aa)
+    .setScrollFactor(0);
+
+    this.shopText = this.add.text(350, 30, "SHOP (E)", {
+        fontSize: "14px",
+        color: "#ffffff"
+    }).setScrollFactor(0);
+
+    this.hudText = this.add.text(10, 10, "", {
+        fontSize: "14px",
+        color: "#ffffff"
+    }).setScrollFactor(0);
+
+    this.keyE = this.input.keyboard.addKey("E");
 
     for (let i = 0; i < HOTBAR_SLOTS; i++) {
       this.inventory.push({
@@ -99,13 +117,16 @@ class GameScene extends Phaser.Scene {
     /* =================================================
        PLAYER
     ================================================= */
+
     this.player = this.add.rectangle(
-      MAP_WIDTH * TILE_SIZE / 2,
-      5 * TILE_SIZE,
-      TILE_SIZE * 0.8,
-      TILE_SIZE * 0.9,
-      0x33ccff
-    );
+        MAP_WIDTH * TILE_SIZE / 2,
+        5 * TILE_SIZE,
+        TILE_SIZE * 0.8,
+        TILE_SIZE * 0.9,
+        0x33ccff
+        );
+
+    this.player.setStrokeStyle(2, 0x000000, 0.6);
 
     this.physics.add.existing(this.player);
     this.player.body.setGravityY(700);
@@ -141,6 +162,21 @@ class GameScene extends Phaser.Scene {
       digPower: 1,
       gold: 0
     };
+
+this.particles = this.add.particles(
+  0,
+  0,
+  "__WHITE",
+  {
+    lifespan: 300,
+    speed: { min: 30, max: 80 },
+    scale: { start: 0.5, end: 0 },
+    gravityY: 300,
+    quantity: 5,
+    tint: 0xffffff,
+    blendMode: Phaser.BlendModes.NORMAL
+  }
+);
 
     this.createHUD();
   }
@@ -223,11 +259,11 @@ updateHUD() {
     }
 
     const tile = this.add.rectangle(
-      x * TILE_SIZE,
-      y * TILE_SIZE,
-      TILE_SIZE,
-      TILE_SIZE,
-      color
+    x * TILE_SIZE,
+    y * TILE_SIZE,
+    TILE_SIZE,
+    TILE_SIZE,
+    color
     ).setOrigin(0);
 
     this.physics.add.existing(tile, true);
@@ -271,6 +307,14 @@ dig() {
 
   tile.hp -= this.playerStats.digPower;
 
+    this.tweens.add({
+    targets: tile,
+    scaleX: 0.85,
+    scaleY: 0.85,
+    duration: 50,
+    yoyo: true
+    });
+
   tile.scaleX = tile.hp / 4;
   tile.scaleY = tile.hp / 4;
 
@@ -280,22 +324,46 @@ dig() {
 
     if (tile.tileType === TILE.GOLD) {
     this.addItemToInventory(ITEM.GOLD, 1);
+    this.coins += 3;
     }
 
     if (tile.tileType === TILE.IRON) {
     this.addItemToInventory(ITEM.IRON, 1);
+    this.coins += 1;
     }
   }
+    this.particles.emitParticleAt(
+    tile.x + TILE_SIZE / 2,
+    tile.y + TILE_SIZE / 2
+    );
 }
 
 
   update() {
+    this.hudText.setText(
+        `Coins: ${this.coins}\nDig Power: ${this.digPower}`
+    );
+
+    // apertou E perto da loja
+    if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
+        const price = this.digPower * 10;
+
+        if (this.coins >= price) {
+            this.coins -= price;
+            this.digPower += 1;
+
+            notyf.success(`Upgrade de picareta comprado! Dig Power: ${this.digPower}`);
+
+        } else {
+            notyf.error("Moedas insuficientes");
+        }
+    }
     const speed = 140;
     this.player.body.setVelocityX(0);
 
     if (Phaser.Input.Keyboard.JustDown(this.digKey)) {
-  this.dig();
-}
+    this.dig();
+    }
 
     if (this.cursors.left.isDown) {
       this.player.body.setVelocityX(-speed);
@@ -313,7 +381,7 @@ dig() {
     if (Phaser.Input.Keyboard.JustDown(this.digKey)) {
       this.dig();
     }
-  }
+}
 }
 
 /* =====================================================
