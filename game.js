@@ -1,4 +1,4 @@
-const TILE_SIZE = 24;
+const TILE_SIZE = 16;
 const MAP_WIDTH = 100;
 const MAP_HEIGHT = 1000;
 const MAX_STACK = 8;
@@ -20,179 +20,250 @@ const TILE = {
   COIN: 6
 };
 
+//todo: create files to organize code better (e.g., game scene, player, inventory, tiles, etc.)
+
+// Notification setup
 const notyf = new Notyf({ duration: 5000 }); // 5000ms = 5s
 
+//todo: improve message handler
+
 class GameScene extends Phaser.Scene {
-  constructor() {
-    super("game");
-  }
-
-  addItemToInventory(itemType, amout = 1) {
-    for(let slot of this.inventory) {
-        if(slot.item === itemType && slot.amount < MAX_STACK) {
-            slot.amount = Math.min(slot.amount + amout, MAX_STACK);
-            this.updateHUD();
-            notyf.success(`${amout} ${itemType} added to inventory!`);
-            return true;
-        }
+    constructor() {
+        super("game");
     }
 
-    for(let slot of this.inventory) {
-        if(slot.item === null) {
-            slot.item = itemType;
-            slot.amount = amout;
-            this.updateHUD();
-            notyf.success(`${amout} ${itemType} added to inventory!`);
+    //todo: refactor save/load to be more efficient encripting the map to improve performance and reduce storage space, maybe using a simple RLE compression for the map data
+    saveState() {
+        const state = {
+            map: this.map,
+            inventory: this.inventory,
+            coins: this.coins,
+            digPower: this.digPower,
+            playerPosition: {
+                x: this.player.x,
+                y: this.player.y
+            }
+        };
 
-            return true;
-        }
+        localStorage.setItem("gameState", JSON.stringify(state));
+        notyf.success("Game saved!");
     }
 
-    notyf.error('Full stack reached, please remove some items to add more 😅');
-    return false;
-  }
+    loadState() {
+        const stateJSON = localStorage.getItem("gameState");
+        if (!stateJSON) {
+            notyf.error("No saved game found!");
+            return;
+        }
 
-  create() {
-    /* =================================================
-       MAPA STEAMWORLD STYLE
-    ================================================= */
+        const state = JSON.parse(stateJSON);
+        this.map = state.map;
+        this.inventory = state.inventory;
+        this.coins = state.coins;
+        this.digPower = state.digPower;
+        this.player.x = state.playerPosition.x;
+        this.player.y = state.playerPosition.y;
 
-    this.map = [];
-    this.inventory = [];
-    this.tiles = this.physics.add.staticGroup();
-    this.digDir = { x: 0, y: 0 };
-    this.coins = 0;
-    this.digPower = 1;
+        notyf.success("Loading game state...", { duration: 4000 });
 
-    this.keys = this.input.keyboard.addKeys({
-        up: Phaser.Input.Keyboard.KeyCodes.W,
-        down: Phaser.Input.Keyboard.KeyCodes.S,
-        left: Phaser.Input.Keyboard.KeyCodes.A,
-        right: Phaser.Input.Keyboard.KeyCodes.D
-    });
+        // Rebuild tiles based on loaded map
+        this.tiles.clear(true, true);
+        for (let y = 0; y < MAP_HEIGHT; y++) {
+            for (let x = 0; x < MAP_WIDTH; x++) {
+                const tileType = this.map[y][x];
+                if (tileType !== TILE.EMPTY) {
+                    this.createTile(x, y, tileType);
+                }
+            }
+        }
 
-    this.shopText = this.add.text(500, 10, "Press E to shop", {
-        fontSize: "14px",
-        color: "#ffffff"
-    }).setScrollFactor(0);
-
-    this.hudText = this.add.text(10, 10, "", {
-        fontSize: "14px",
-        color: "#ffffff",
-    }).setScrollFactor(0).setDepth(1000);
-
-    this.keyE = this.input.keyboard.addKey("E");
-
-    for (let i = 0; i < HOTBAR_SLOTS; i++) {
-      this.inventory.push({
-        item: null,
-        quantity: 0
-      });
+        this.updateHUD();
+        notyf.success("Game loaded!");
     }
 
+    addItemToInventory(itemType, amout = 1) {
+        for(let slot of this.inventory) {
+            if(slot.item === itemType && slot.amount < MAX_STACK) {
+                slot.amount = Math.min(slot.amount + amout, MAX_STACK);
+                this.updateHUD();
+                notyf.success(`${amout} ${itemType} added to inventory!`);
+                return true;
+            }
+        }
 
-    for (let y = 0; y < MAP_HEIGHT; y++) {
-      this.map[y] = [];
+        for(let slot of this.inventory) {
+            if(slot.item === null) {
+                slot.item = itemType;
+                slot.amount = amout;
+                this.updateHUD();
+                notyf.success(`${amout} ${itemType} added to inventory!`);
 
-      for (let x = 0; x < MAP_WIDTH; x++) {
-        let tile = TILE.EMPTY;
+                return true;
+            }
+        }
 
-        if (y > 6 && y <= 18) tile = TILE.DIRT;
-        else if (y > 18 && y <= 35) tile = TILE.STONE;
-        else if (y > 35) {
-          tile = Math.random() < 0.15 ? TILE.IRON : TILE.STONE;
+        notyf.error('Full stack reached, please remove some items to add more 😅');
+        return false;
+    }
+
+    create() {
+        /* =================================================
+        MAPA STEAMWORLD STYLE
+        ================================================= */
+
+        this.map = [];
+        this.inventory = [];
+        this.tiles = this.physics.add.staticGroup();
+        this.digDir = { x: 0, y: 0 };
+        this.coins = 0;
+        this.digPower = 1;
+
+        this.keys = this.input.keyboard.addKeys({
+            up: Phaser.Input.Keyboard.KeyCodes.W,
+            down: Phaser.Input.Keyboard.KeyCodes.S,
+            left: Phaser.Input.Keyboard.KeyCodes.A,
+            right: Phaser.Input.Keyboard.KeyCodes.D
+        });
+
+        this.shopText = this.add.text(500, 10, "E to shop", {
+            fontSize: "14px",
+            color: "#ffffff"
+        }).setScrollFactor(0);
+        this.shopText = this.add.text(500, 30, "R to sell gems", {
+            fontSize: "14px",
+            color: "#ffffff"
+        }).setScrollFactor(0);
+
+        this.shopText = this.add.text(500, 50, "P to SAVE", {
+            fontSize: "14px",
+            color: "#ffffff"
+        }).setScrollFactor(0);
+
+        this.shopText = this.add.text(500, 70, "L to LOAD", {
+            fontSize: "14px",
+            color: "#ffffff"
+        }).setScrollFactor(0);
+
+        this.hudText = this.add.text(10, 10, "", {
+            fontSize: "14px",
+            color: "#ffffff",
+        }).setScrollFactor(0).setDepth(1000);
+
+        this.keyE = this.input.keyboard.addKey("E");
+        this.keyR = this.input.keyboard.addKey("R");
+        this.saveKey = this.input.keyboard.addKey("P");
+        this.loadKey = this.input.keyboard.addKey("L");
+
+        for (let i = 0; i < HOTBAR_SLOTS; i++) {
+        this.inventory.push({
+            item: null,
+            quantity: 0
+        });
         }
 
 
-        // cavernas
-        if (y > 12 && Math.random() < 0.05) tile = TILE.COIN;
+        for (let y = 0; y < MAP_HEIGHT; y++) {
+        this.map[y] = [];
 
-        if (y > 13 && Math.random() < 0.03) tile = TILE.IRON;
-        if (y > 13 && Math.random() < 0.02) tile = TILE.GOLD;
+        for (let x = 0; x < MAP_WIDTH; x++) {
+            let tile = TILE.EMPTY;
 
-        this.map[y][x] = tile;
+            if (y > 6 && y <= 18) tile = TILE.DIRT;
+            else if (y > 18 && y <= 35) tile = TILE.STONE;
+            else if (y > 35) {
+            tile = Math.random() < 0.15 ? TILE.IRON : TILE.STONE;
+            }
 
-        if (tile !== TILE.EMPTY) {
-          this.createTile(x, y, tile);
+
+            // cavernas
+            if (y > 12 && Math.random() < 0.05) tile = TILE.COIN;
+
+            if (y > 13 && Math.random() < 0.03) tile = TILE.IRON;
+            if (y > 13 && Math.random() < 0.02) tile = TILE.GOLD;
+
+            this.map[y][x] = tile;
+
+            if (tile !== TILE.EMPTY) {
+            this.createTile(x, y, tile);
+            }
         }
-      }
-    }
+        }
 
-    /* =================================================
-       PLAYER
-    ================================================= */
+        /* =================================================
+        PLAYER
+        ================================================= */
 
-    this.player = this.add.rectangle(
-        MAP_WIDTH * TILE_SIZE * 0.5,
-        5 * TILE_SIZE,
-        TILE_SIZE * 0.8,
-        TILE_SIZE * 0.9,
-        0x33ccff
+        this.player = this.add.rectangle(
+            MAP_WIDTH * TILE_SIZE * 0.5,
+            5 * TILE_SIZE,
+            TILE_SIZE * 0.8,
+            TILE_SIZE * 0.9,
+            0x33ccff
+            );
+
+        this.player.setStrokeStyle(2, 0x000000, 0.6);
+
+        this.physics.add.existing(this.player);
+
+        this.player.body.setGravityY(700);
+        this.player.body.setCollideWorldBounds(true);
+
+        this.physics.add.collider(this.player, this.tiles);
+            this.physics.world.setBounds(
+            0,
+            0,
+            MAP_WIDTH * TILE_SIZE,
+            MAP_HEIGHT * TILE_SIZE
+            );
+
+        this.facing = 1; // 1 = direita | -1 = esquerda
+
+        /* =================================================
+        INPUT
+        ================================================= */
+        this.cursors = this.input.keyboard.createCursorKeys();
+        this.digKey = this.input.keyboard.addKey(
+        Phaser.Input.Keyboard.KeyCodes.X
         );
 
-    this.player.setStrokeStyle(2, 0x000000, 0.6);
+        /* =================================================
+        CÂMERA
+        ================================================= */
+        this.cameras.main.startFollow(this.player);
+        // this.cameras.main.setBounds(
+        //   0, 0,
+        //   MAP_WIDTH,
+        //   MAP_HEIGHT * TILE_SIZE * 100
+        // );
+        this.cameras.main.setRoundPixels(true);
 
-    this.physics.add.existing(this.player);
+        /* =================================================
+        PLAYER STATS
+        ================================================= */
+        this.playerStats = {
+        digPower: 1,
+        gold: 0
+        };
 
-    this.player.body.setGravityY(700);
-    this.player.body.setCollideWorldBounds(true);
-
-    this.physics.add.collider(this.player, this.tiles);
-        this.physics.world.setBounds(
+        this.particles = this.add.particles(
         0,
         0,
-        MAP_WIDTH * TILE_SIZE,
-        MAP_HEIGHT * TILE_SIZE
+        "__WHITE",
+            {
+                lifespan: 300,
+                speed: { min: 30, max: 80 },
+                scale: { start: 0.5, end: 0 },
+                gravityY: 300,
+                quantity: 5,
+                tint: 0xffffff,
+                blendMode: Phaser.BlendModes.NORMAL
+            }
         );
 
-    this.facing = 1; // 1 = direita | -1 = esquerda
+        this.createHUD();
+    }
 
-    /* =================================================
-       INPUT
-    ================================================= */
-    this.cursors = this.input.keyboard.createCursorKeys();
-    this.digKey = this.input.keyboard.addKey(
-      Phaser.Input.Keyboard.KeyCodes.X
-    );
-
-    /* =================================================
-       CÂMERA
-    ================================================= */
-    this.cameras.main.startFollow(this.player);
-    // this.cameras.main.setBounds(
-    //   0, 0,
-    //   MAP_WIDTH,
-    //   MAP_HEIGHT * TILE_SIZE * 100
-    // );
-    this.cameras.main.setRoundPixels(true);
-
-    /* =================================================
-       PLAYER STATS
-    ================================================= */
-    this.playerStats = {
-      digPower: 1,
-      gold: 0
-    };
-
-    this.particles = this.add.particles(
-    0,
-    0,
-    "__WHITE",
-        {
-            lifespan: 300,
-            speed: { min: 30, max: 80 },
-            scale: { start: 0.5, end: 0 },
-            gravityY: 300,
-            quantity: 5,
-            tint: 0xffffff,
-            blendMode: Phaser.BlendModes.NORMAL
-        }
-    );
-
-    this.createHUD();
-  }
-
-  createHUD() {
+    createHUD() {
   this.hud = this.add.container(0, 0);
   this.hud.setScrollFactor(0);
 
@@ -225,61 +296,60 @@ class GameScene extends Phaser.Scene {
   }
 
   this.updateHUD();
-}
-
-updateHUD() {
-  for (let i = 0; i < HOTBAR_SLOTS; i++) {
-    const slot = this.inventory[i];
-    const hudSlot = this.hudSlots[i];
-
-    if (slot.item) {
-      let label = "";
-
-      if (slot.item === ITEM.GOLD) label = "Au";
-      if (slot.item === ITEM.IRON) label = "Fe";
-
-      hudSlot.text.setText(`${label}\n${slot.amount}`);
-    } else {
-      hudSlot.text.setText("");
-    }
-  }
-}
-
-
-  createTile(x, y, type) {
-    let color = 0x8b5a2b;
-    let hp = 2;
-
-    if (type === TILE.STONE) {
-      color = 0x666666;
-      hp = 4;
-    }
-    if (type === TILE.ORE) {
-      color = 0xffcc00;
-      hp = 3;
     }
 
-    if(type === TILE.IRON) {
-      color = 0xfcc4c0;
-      hp = 5;
+    updateHUD() {
+    for (let i = 0; i < HOTBAR_SLOTS; i++) {
+        const slot = this.inventory[i];
+        const hudSlot = this.hudSlots[i];
+
+        if (slot.item) {
+        let label = "";
+
+        if (slot.item === ITEM.GOLD) label = "Au";
+        if (slot.item === ITEM.IRON) label = "Fe";
+
+        hudSlot.text.setText(`${label}\n${slot.amount}`);
+        } else {
+        hudSlot.text.setText("");
+        }
+    }
     }
 
-    if(type === TILE.GOLD) {
-      color = 0xffd700;
-      hp = 6;
+    createTile(x, y, type) {
+        let color = 0x8b5a2b;
+        let hp = 2;
+
+        if (type === TILE.STONE) {
+        color = 0x666666;
+        hp = 4;
+        }
+        if (type === TILE.ORE) {
+        color = 0xffcc00;
+        hp = 3;
+        }
+
+        if(type === TILE.IRON) {
+        color = 0xfcc4c0;
+        hp = 5;
+        }
+
+        if(type === TILE.GOLD) {
+        color = 0xffd700;
+        hp = 6;
+        }
+
+        const tile = this.buildTile(x, y, color, type);
+
+        this.physics.add.existing(tile, true);
+
+        tile.tileX = x;
+        tile.tileY = y;
+        tile.tileType = type;
+        tile.hp = hp;
+
+        this.tiles.add(tile);
     }
-
-    const tile = this.buildTile(x, y, color, type);
-
-    this.physics.add.existing(tile, true);
-
-    tile.tileX = x;
-    tile.tileY = y;
-    tile.tileType = type;
-    tile.hp = hp;
-
-    this.tiles.add(tile);
-  }
 
     buildTile(x, y, color, type) {
         if(type === TILE.COIN) {
@@ -300,123 +370,176 @@ updateHUD() {
         ).setOrigin(0);
     }
 
-dig() {
-  const px = Math.floor(this.player.x / TILE_SIZE);
-  const py = Math.floor(this.player.y / TILE_SIZE);
+    dig() {
+    const px = Math.floor(this.player.x / TILE_SIZE);
+    const py = Math.floor(this.player.y / TILE_SIZE);
 
-  let dx = 0;
-  let dy = 0;
+    let dx = 0;
+    let dy = 0;
 
-if (this.cursors.left.isDown || this.keys.left.isDown) dx = -1;
-else if (this.cursors.right.isDown || this.keys.right.isDown) dx = 1;
-else if (this.cursors.up.isDown || this.keys.up.isDown) dy = -1;
-else if (this.cursors.down.isDown || this.keys.down.isDown) dy = 1;
-else dx = this.facing;
+    if (this.cursors.left.isDown || this.keys.left.isDown) dx = -1;
+    else if (this.cursors.right.isDown || this.keys.right.isDown) dx = 1;
+    else if (this.cursors.up.isDown || this.keys.up.isDown) dy = -1;
+    else if (this.cursors.down.isDown || this.keys.down.isDown) dy = 1;
+    else dx = this.facing;
 
 
-  const tx = px + dx;
-  const ty = py + dy;
+    const tx = px + dx;
+    const ty = py + dy;
 
-  if (
-    tx < 0 || tx >= MAP_WIDTH ||
-    ty < 0 || ty >= MAP_HEIGHT
-  ) return;
+    if (
+        tx < 0 || tx >= MAP_WIDTH ||
+        ty < 0 || ty >= MAP_HEIGHT
+    ) return;
 
-  const tileType = this.map[ty][tx];
-  if (tileType === TILE.EMPTY) return;
+    const tileType = this.map[ty][tx];
+    if (tileType === TILE.EMPTY) return;
 
-  const tile = this.tiles.getChildren().find(t =>
-    t.tileX === tx && t.tileY === ty
-  );
-  if (!tile) return;
-
-  tile.hp -= this.playerStats.digPower;
-
-    this.tweens.add({
-    targets: tile,
-    scaleX: 0.85,
-    scaleY: 0.85,
-    duration: 50,
-    yoyo: true
-    });
-
-  tile.scaleX = tile.hp / 4;
-  tile.scaleY = tile.hp / 4;
-
-  if (tile.hp <= 0) {
-    this.map[ty][tx] = TILE.EMPTY;
-    this.tiles.remove(tile, true, true);
-
-    if (tile.tileType === TILE.COIN) {
-    notyf.success("You found a coin! +1¢");
-    this.coins += 1;
-    }
-
-    if (tile.tileType === TILE.GOLD) {
-    this.addItemToInventory(ITEM.GOLD, 1);
-    }
-
-    if (tile.tileType === TILE.IRON) {
-    this.addItemToInventory(ITEM.IRON, 1);
-    }
-  }
-    this.particles.emitParticleAt(
-    tile.x + TILE_SIZE / 2,
-    tile.y + TILE_SIZE / 2
+    const tile = this.tiles.getChildren().find(t =>
+        t.tileX === tx && t.tileY === ty
     );
-}
+    if (!tile) return;
 
+    tile.hp -= this.playerStats.digPower;
 
-  update() {
-    this.hudText.setText(
-        `Coins: ${this.coins}\nDig Power: ${this.digPower}`
-    );
+        this.tweens.add({
+        targets: tile,
+        scaleX: 0.85,
+        scaleY: 0.85,
+        duration: 50,
+        yoyo: true
+        });
 
-    // apertou E perto da loja
-    if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
-        const price = this.digPower * 10;
+    tile.scaleX = tile.hp / 4;
+    tile.scaleY = tile.hp / 4;
 
-        if (this.coins >= price) {
-            this.coins -= price;
-            this.digPower += 1;
+    if (tile.hp <= 0) {
+        this.map[ty][tx] = TILE.EMPTY;
+        this.tiles.remove(tile, true, true);
 
-            notyf.success(`Upgrade de picareta comprado! Dig Power: ${this.digPower}`);
+        if (tile.tileType === TILE.COIN) {
+        notyf.success("You found a coin! +1¢");
+        this.coins += 1;
+        }
 
-        } else {
-            notyf.error("Moedas insuficientes");
+        if (tile.tileType === TILE.GOLD) {
+        this.addItemToInventory(ITEM.GOLD, 1);
+        }
+
+        if (tile.tileType === TILE.IRON) {
+        this.addItemToInventory(ITEM.IRON, 1);
         }
     }
-    const speed = 140;
-    this.player.body.setVelocityX(0);
-
-    if (Phaser.Input.Keyboard.JustDown(this.digKey)) {
-    this.dig();
+        this.particles.emitParticleAt(
+        tile.x + TILE_SIZE / 2,
+        tile.y + TILE_SIZE / 2
+        );
     }
 
-    // esquerda
-    if (this.cursors.left.isDown || this.keys.left.isDown) {
-    this.player.body.setVelocityX(-speed);
-    this.facing = -1;
-    }
+    update() {
+        this.hudText.setText(
+            `Coins: ${this.coins}\nDig Power: ${this.digPower}`
+        );
 
-    // direita
+        // apertou E perto da loja
+        this.buyUpgrade();
+        this.sellGems()
+        this.handleSave();
+        this.handleLoad();
+
+        const speed = 140;
+        this.player.body.setVelocityX(0);
+
+        if (Phaser.Input.Keyboard.JustDown(this.digKey)) {
+            this.dig();
+        }
+
+        // esquerda
+        if (this.cursors.left.isDown || this.keys.left.isDown) {
+            this.player.body.setVelocityX(-speed);
+            this.facing = -1;
+        }
+
+        // direita
         if (this.cursors.right.isDown || this.keys.right.isDown) {
-    this.player.body.setVelocityX(speed);
-    this.facing = 1;
+            this.player.body.setVelocityX(speed);
+            this.facing = 1;
+        }
+
+        // pulo
+        if (
+        (this.cursors.up.isDown || this.keys.up.isDown) &&
+        this.player.body.blocked.down
+        ) {
+        this.player.body.setVelocityY(-320);
+        }
+
+        if (Phaser.Input.Keyboard.JustDown(this.digKey)) {
+        this.dig();
+        }
     }
 
-    // pulo
-    if (
-    (this.cursors.up.isDown || this.keys.up.isDown) &&
-    this.player.body.blocked.down
-    ) {
-    this.player.body.setVelocityY(-320);
+    handleSave() {
+        if (Phaser.Input.Keyboard.JustDown(this.saveKey)) {
+            this.saveState();
+        }
     }
 
-    if (Phaser.Input.Keyboard.JustDown(this.digKey)) {
-      this.dig();
+    handleLoad() {
+        if (Phaser.Input.Keyboard.JustDown(this.loadKey)) {
+            this.loadState();
+        }
     }
-}
+
+    buyUpgrade() {
+        if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
+            const price = this.digPower * 10;
+
+            if (this.coins >= price) {
+                this.coins -= price;
+                this.digPower += 1;
+
+                notyf.success(`Upgrade de picareta comprado! Dig Power: ${this.digPower}`);
+
+            } else {
+                notyf.error("Moedas insuficientes");
+            }
+        }
+    }
+
+
+    //refactor: reestruturar a estrutura de dados de itens para manipulação mais fácil
+    sellGems(){
+        if (Phaser.Input.Keyboard.JustDown(this.keyR)) {
+            if( this.inventory.every(slot => slot.item === null)) {
+                notyf.error("Nenhum item para vender!");
+                return;
+            }
+
+            for(let slot of this.inventory) {
+                if(slot.item === ITEM.GOLD) {
+                    const amount = slot.amount;
+                    const earnedCoins = amount * 5;
+                    this.coins += earnedCoins;
+                    slot.item = null;
+                    slot.amount = 0;
+                    this.updateHUD();
+                    notyf.success(`Vendeu ${amount} Au por ${earnedCoins}¢`);
+                    return;
+                }
+                if(slot.item === ITEM.IRON) {
+                    const amount = slot.amount;
+                    const earnedCoins = amount * 2;
+                    this.coins += earnedCoins;
+                    slot.item = null;
+                    slot.amount = 0;
+                    this.updateHUD();
+                    notyf.success(`Vendeu ${amount} Au por ${earnedCoins}¢`);
+                    return;
+                }
+            }
+        }
+    }
 }
 
 /* =====================================================
