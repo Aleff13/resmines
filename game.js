@@ -22,8 +22,6 @@ const messages = {
     soldItems: (amount, item, earnedCoins) => `Vendeu ${amount} ${item} por ${earnedCoins}¢`
 };
 
-
-
 const TILE = {
   EMPTY: 0,
   DIRT: 1,
@@ -48,15 +46,25 @@ class GameScene extends Phaser.Scene {
     }
 
     preload() {
-        this.load.spritesheet("player_walk", "assets/player/walk.png", {
-            frameWidth: 45,
-            frameHeight: 57 // Corrigido de 54 para 55
+        this.load.spritesheet("player_walk", "assets/player/knight/Run.png", {
+            frameWidth: 144,
+            frameHeight: 144 // Corrigido de 54 para 55
         });
         
         // Faça o mesmo para o idle se ele vier do mesmo arquivo ou tiver a mesma proporção
-        this.load.spritesheet("player_idle", "assets/player/idle.png", {
-            frameWidth: 45,
-            frameHeight: 55
+        this.load.spritesheet("player_idle", "assets/player/knight/Idle.png", {
+            frameWidth: 144,
+            frameHeight: 144
+        });
+
+        this.load.spritesheet("player_jump", "assets/player/knight/Jump.png", {
+            frameWidth: 144,
+            frameHeight: 144
+        });
+
+        this.load.spritesheet("player_attack", "assets/player/knight/Attack 1.png", {
+            frameWidth: 144,
+            frameHeight: 144
         });
 
         this.load.image("dirt", "assets/tiles/dirt.png");
@@ -152,6 +160,8 @@ class GameScene extends Phaser.Scene {
 
         this.digDir = { x: 0, y: 0 };
         this.coins = 0;
+        this.isAttacking = false;
+
         // this.playerStats.digPower = 1;
 
         this.keys = this.input.keyboard.addKeys({
@@ -197,7 +207,6 @@ class GameScene extends Phaser.Scene {
             });
         }
 
-
         for (let y = 0; y < MAP_HEIGHT; y++) {
         this.map[y] = [];
 
@@ -242,9 +251,9 @@ class GameScene extends Phaser.Scene {
             key: "idle",
             frames: this.anims.generateFrameNumbers("player_idle", {
                 start: 0,
-                end: 9
+                end: 6
             }),
-            frameRate: 10,
+            frameRate: 7,
             repeat: -1
         });
 
@@ -258,10 +267,30 @@ class GameScene extends Phaser.Scene {
             key: "walk",
             frames: this.anims.generateFrameNumbers("player_walk", {
                 start: 0,
-                end: 23 // Se a folha tem 24 frames no total
+                end: 6 // Se a folha tem 24 frames no total
             }),
-            frameRate: 24,
+            frameRate: 7,
             repeat: -1
+        });
+
+        this.anims.create({
+            key: "jump",
+            frames: this.anims.generateFrameNumbers("player_jump", {
+                start: 0,
+                end: 3 // Se a folha tem 24 frames no total
+            }),
+            frameRate: 4,
+            repeat: -1
+        });
+
+        this.anims.create({
+            key: "attack",
+            frames: this.anims.generateFrameNumbers("player_attack", {
+                start: 0,
+                end: 9 // Se a folha tem 24 frames no total
+            }),
+            frameRate: 28,
+            repeat: 0
         });
 
         this.player = this.physics.add.sprite(
@@ -270,7 +299,7 @@ class GameScene extends Phaser.Scene {
             "player_idle"
         );
 
-        this.player.setScale(0.4);
+        this.player.setScale(0.7);
         this.player.setCollideWorldBounds(true);
         this.player.body.setGravityY(700);
         // this.player = this.add.rectangle(
@@ -283,13 +312,11 @@ class GameScene extends Phaser.Scene {
 
         // this.player.setStrokeStyle(2, 0x000000, 0.6);
 
-        this.physics.add.existing(this.player);
-
         this.player.body.setGravityY(700);
         this.player.body.setCollideWorldBounds(true);
-
-        this.player.body.setSize(25, 40); // Tamanho da caixa de colisão (menor que o sprite)
-        this.player.body.setOffset(10, 10);
+        this.physics.add.existing(this.player);
+        this.player.body.setSize(15, 20); // Tamanho da caixa de colisão (menor que o sprite)
+        // this.player.body.setOffset(10, 10);
 
         this.physics.add.collider(this.player, this.tiles);
         this.physics.world.setBounds(
@@ -621,35 +648,67 @@ class GameScene extends Phaser.Scene {
 // }
 
 handleMovements(speed) {
-    this.player.body.setVelocityX(0);
 
+    if (this.isAttacking) {
+        this.player.setVelocityX(0);
+        return;
+    }
+
+    const onGround = this.player.body.blocked.down;
+
+    // Movimento horizontal
     if (this.cursors.left.isDown || this.keys.left.isDown) {
         this.player.body.setVelocityX(-speed);
-        this.player.setFlipX(false); // Mantém original
-        this.player.anims.play("walk", true);
+        this.player.setFlipX(true);
     } 
     else if (this.cursors.right.isDown || this.keys.right.isDown) {
         this.player.body.setVelocityX(speed);
-        this.player.setFlipX(true); // Inverte horizontalmente
-        this.player.anims.play("walk", true);
+        this.player.setFlipX(false);
     } 
     else {
         this.player.body.setVelocityX(0);
-        this.player.anims.play("idle", true);
     }
 
     // Pulo
-    if ((this.cursors.up.isDown || this.keys.up.isDown) && this.player.body.blocked.down) {
+    if ((this.cursors.up.isDown || this.keys.up.isDown) && onGround) {
         this.player.body.setVelocityY(-320);
+    }
+
+    // 🎬 CONTROLE DE ANIMAÇÃO (SEPARADO DO MOVIMENTO)
+
+    if (!onGround) {
+        // Está no ar → trava jump
+        this.player.anims.play("jump", true);
+    }
+    else if (this.player.body.velocity.x !== 0) {
+        this.player.anims.play("walk", true);
+    }
+    else {
+        this.player.anims.play("idle", true);
     }
 }
 
 
-    handleDig() {
-        if (Phaser.Input.Keyboard.JustDown(this.digKey)) {
-            this.dig();
-        }
+handleDig() {
+
+    if (this.isAttacking) return;
+
+    if (Phaser.Input.Keyboard.JustDown(this.digKey)) {
+
+        this.isAttacking = true;
+
+        this.player.setVelocityX(0);
+
+        this.player.anims.play("attack", true);
+
+        this.dig();
+
+        // Quando animação terminar
+        this.player.once("animationcomplete-attack", () => {
+            this.isAttacking = false;
+        });
     }
+}
 
     //early return for better readability
     handleSave() {
