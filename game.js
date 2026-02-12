@@ -148,6 +148,8 @@ class GameScene extends Phaser.Scene {
         this.map = [];
         this.inventory = [];
         this.tiles = this.physics.add.staticGroup();
+        this.waterTiles = this.physics.add.group();
+
         this.digDir = { x: 0, y: 0 };
         this.coins = 0;
         // this.playerStats.digPower = 1;
@@ -215,10 +217,19 @@ class GameScene extends Phaser.Scene {
             if (y > 13 && Math.random() < 0.03) tile = TILE.IRON;
             if (y > 13 && Math.random() < 0.02) tile = TILE.GOLD;
 
+            if (y > 20 && Math.random() < 0.02) {
+                for (let i = 0; i < 5; i++) {
+                    if (x + i < MAP_WIDTH) {
+                        this.map[y][x + i] = TILE.WATER;
+                        this.createTile(x + i, y, TILE.WATER);
+                    }
+                }
+            }
+
             this.map[y][x] = tile;
 
             if (tile !== TILE.EMPTY) {
-            this.createTile(x, y, tile);
+                this.createTile(x, y, tile);
             }
         }
         }
@@ -416,15 +427,20 @@ class GameScene extends Phaser.Scene {
         //const tile = this.buildTile(x, y, color, type);
         const tile = this.buildTile(x, y, type);
 
-
-        this.physics.add.existing(tile, true);
-
         tile.tileX = x;
         tile.tileY = y;
         tile.tileType = type;
         tile.hp = hp;
 
-        this.tiles.add(tile);
+        if(type === TILE.WATER) {
+            this.waterTiles.add(tile);
+        }
+        else
+            {
+            this.physics.add.existing(tile, true);
+            this.tiles.add(tile);
+        }
+
     }
 
     // buildTile(x, y, color, type) {
