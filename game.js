@@ -10,6 +10,20 @@ const ITEM = {
   COIN: "coin"
 };
 
+const messages = {
+    saveSuccess: "Game saved!",
+    loadSuccess: "Game loaded!",
+    noSave: "No saved game found!",
+    itemAdded: (amount, item) => `${amount} ${item} added to inventory!`,
+    inventoryFull: 'Full stack reached, please remove some items to add more 😅',
+    upgradeBought: (digPower) => `Upgrade de picareta comprado! Dig Power: ${digPower}`,
+    notEnoughCoins: "Moedas insuficientes",
+    noItemsToSell: "Nenhum item para vender!",
+    soldItems: (amount, item, earnedCoins) => `Vendeu ${amount} ${item} por ${earnedCoins}¢`
+};
+
+
+
 const TILE = {
   EMPTY: 0,
   DIRT: 1,
@@ -17,7 +31,8 @@ const TILE = {
   ORE: 3,
   IRON: 4,
   GOLD: 5,
-  COIN: 6
+  COIN: 6,
+  WATER: 7
 };
 
 //todo: create files to organize code better (e.g., game scene, player, inventory, tiles, etc.)
@@ -32,13 +47,32 @@ class GameScene extends Phaser.Scene {
         super("game");
     }
 
+    preload() {
+        this.load.spritesheet("player_walk", "assets/player/walk.png", {
+            frameWidth: 45,
+            frameHeight: 57 // Corrigido de 54 para 55
+        });
+        
+        // Faça o mesmo para o idle se ele vier do mesmo arquivo ou tiver a mesma proporção
+        this.load.spritesheet("player_idle", "assets/player/idle.png", {
+            frameWidth: 45,
+            frameHeight: 55
+        });
+
+        this.load.image("dirt", "assets/tiles/dirt.png");
+        this.load.image("stone", "assets/tiles/stone.png");
+        this.load.image("gold", "assets/tiles/gold.png");
+        this.load.image("iron", "assets/tiles/iron.png");
+        this.load.image("water", "assets/tiles/water.png");
+    }
+
     //todo: refactor save/load to be more efficient encripting the map to improve performance and reduce storage space, maybe using a simple RLE compression for the map data
     saveState() {
         const state = {
             map: this.map,
             inventory: this.inventory,
             coins: this.coins,
-            digPower: this.digPower,
+            digPower: this.playerStats.digPower,
             playerPosition: {
                 x: this.player.x,
                 y: this.player.y
@@ -46,13 +80,13 @@ class GameScene extends Phaser.Scene {
         };
 
         localStorage.setItem("gameState", JSON.stringify(state));
-        notyf.success("Game saved!");
+        notyf.success(messages.saveSuccess);
     }
 
     loadState() {
         const stateJSON = localStorage.getItem("gameState");
         if (!stateJSON) {
-            notyf.error("No saved game found!");
+            notyf.error(messages.noSave);
             return;
         }
 
@@ -60,7 +94,7 @@ class GameScene extends Phaser.Scene {
         this.map = state.map;
         this.inventory = state.inventory;
         this.coins = state.coins;
-        this.digPower = state.digPower;
+        this.playerStats.digPower = state.digPower;
         this.player.x = state.playerPosition.x;
         this.player.y = state.playerPosition.y;
 
@@ -78,7 +112,7 @@ class GameScene extends Phaser.Scene {
         }
 
         this.updateHUD();
-        notyf.success("Game loaded!");
+        notyf.success(messages.loadSuccess, { duration: 4000 });
     }
 
     addItemToInventory(itemType, amout = 1) {
@@ -102,7 +136,7 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        notyf.error('Full stack reached, please remove some items to add more 😅');
+        notyf.error(messages.inventoryFull);
         return false;
     }
 
@@ -116,7 +150,7 @@ class GameScene extends Phaser.Scene {
         this.tiles = this.physics.add.staticGroup();
         this.digDir = { x: 0, y: 0 };
         this.coins = 0;
-        this.digPower = 1;
+        // this.playerStats.digPower = 1;
 
         this.keys = this.input.keyboard.addKeys({
             up: Phaser.Input.Keyboard.KeyCodes.W,
@@ -155,10 +189,10 @@ class GameScene extends Phaser.Scene {
         this.loadKey = this.input.keyboard.addKey("L");
 
         for (let i = 0; i < HOTBAR_SLOTS; i++) {
-        this.inventory.push({
-            item: null,
-            quantity: 0
-        });
+            this.inventory.push({
+                item: null,
+                quantity: 0
+            });
         }
 
 
@@ -192,29 +226,67 @@ class GameScene extends Phaser.Scene {
         /* =================================================
         PLAYER
         ================================================= */
+        
+        this.anims.create({
+            key: "idle",
+            frames: this.anims.generateFrameNumbers("player_idle", {
+                start: 0,
+                end: 9
+            }),
+            frameRate: 10,
+            repeat: -1
+        });
 
-        this.player = this.add.rectangle(
+        // this.anims.create({
+        //     key: "idle",
+        //     frames: [{ key: "player_idle", frame: 0 }],
+        //     frameRate: 1
+        // });
+
+        this.anims.create({
+            key: "walk",
+            frames: this.anims.generateFrameNumbers("player_walk", {
+                start: 0,
+                end: 23 // Se a folha tem 24 frames no total
+            }),
+            frameRate: 24,
+            repeat: -1
+        });
+
+        this.player = this.physics.add.sprite(
             MAP_WIDTH * TILE_SIZE * 0.5,
-            5 * TILE_SIZE,
-            TILE_SIZE * 0.8,
-            TILE_SIZE * 0.9,
-            0x33ccff
-            );
+            1 * TILE_SIZE,
+            "player_idle"
+        );
 
-        this.player.setStrokeStyle(2, 0x000000, 0.6);
+        this.player.setScale(0.4);
+        this.player.setCollideWorldBounds(true);
+        this.player.body.setGravityY(700);
+        // this.player = this.add.rectangle(
+        //     MAP_WIDTH * TILE_SIZE * 0.5,
+        //     5 * TILE_SIZE,
+        //     TILE_SIZE * 0.8,
+        //     TILE_SIZE * 0.9,
+        //     0x33ccff
+        //     );
+
+        // this.player.setStrokeStyle(2, 0x000000, 0.6);
 
         this.physics.add.existing(this.player);
 
         this.player.body.setGravityY(700);
         this.player.body.setCollideWorldBounds(true);
 
+        this.player.body.setSize(25, 40); // Tamanho da caixa de colisão (menor que o sprite)
+        this.player.body.setOffset(10, 10);
+
         this.physics.add.collider(this.player, this.tiles);
-            this.physics.world.setBounds(
-            0,
-            0,
-            MAP_WIDTH * TILE_SIZE,
-            MAP_HEIGHT * TILE_SIZE
-            );
+        this.physics.world.setBounds(
+        0,
+        0,
+        MAP_WIDTH * TILE_SIZE,
+        MAP_HEIGHT * TILE_SIZE
+        );
 
         this.facing = 1; // 1 = direita | -1 = esquerda
 
@@ -241,8 +313,8 @@ class GameScene extends Phaser.Scene {
         PLAYER STATS
         ================================================= */
         this.playerStats = {
-        digPower: 1,
-        gold: 0
+            digPower: 1,
+            gold: 0
         };
 
         this.particles = this.add.particles(
@@ -260,42 +332,44 @@ class GameScene extends Phaser.Scene {
             }
         );
 
+
+
         this.createHUD();
     }
 
     createHUD() {
-  this.hud = this.add.container(0, 0);
-  this.hud.setScrollFactor(0);
+        this.hud = this.add.container(0, 0);
+        this.hud.setScrollFactor(0);
 
-  this.hudSlots = [];
+        this.hudSlots = [];
 
-  const startX = 200;
-  const startY = 320;
-  const slotSize = 36;
+        const startX = 200;
+        const startY = 320;
+        const slotSize = 36;
 
-  for (let i = 0; i < HOTBAR_SLOTS; i++) {
-    const bg = this.add.rectangle(
-      startX + i * (slotSize + 4),
-      startY,
-      slotSize,
-      slotSize,
-      0x222222
-    ).setStrokeStyle(2, 0xffffff);
+        for (let i = 0; i < HOTBAR_SLOTS; i++) {
+            const bg = this.add.rectangle(
+            startX + i * (slotSize + 4),
+            startY,
+            slotSize,
+            slotSize,
+            0x222222
+            ).setStrokeStyle(2, 0xffffff);
 
-    const text = this.add.text(
-      bg.x - 14,
-      bg.y - 12,
-      "",
-      { fontSize: "14px", color: "#ffffff" }
-    );
+            const text = this.add.text(
+            bg.x - 14,
+            bg.y - 12,
+            "",
+            { fontSize: "14px", color: "#ffffff" }
+            );
 
-    this.hud.add(bg);
-    this.hud.add(text);
+            this.hud.add(bg);
+            this.hud.add(text);
 
-    this.hudSlots.push({ bg, text });
-  }
+            this.hudSlots.push({ bg, text });
+        }
 
-  this.updateHUD();
+        this.updateHUD();
     }
 
     updateHUD() {
@@ -321,25 +395,27 @@ class GameScene extends Phaser.Scene {
         let hp = 2;
 
         if (type === TILE.STONE) {
-        color = 0x666666;
-        hp = 4;
+            color = 0x666666;
+            hp = 4;
         }
         if (type === TILE.ORE) {
-        color = 0xffcc00;
-        hp = 3;
+            color = 0xffcc00;
+            hp = 3;
         }
 
         if(type === TILE.IRON) {
-        color = 0xfcc4c0;
-        hp = 5;
+            color = 0xfcc4c0;
+            hp = 5;
         }
 
         if(type === TILE.GOLD) {
-        color = 0xffd700;
-        hp = 6;
+            color = 0xffd700;
+            hp = 6;
         }
 
-        const tile = this.buildTile(x, y, color, type);
+        //const tile = this.buildTile(x, y, color, type);
+        const tile = this.buildTile(x, y, type);
+
 
         this.physics.add.existing(tile, true);
 
@@ -351,168 +427,253 @@ class GameScene extends Phaser.Scene {
         this.tiles.add(tile);
     }
 
-    buildTile(x, y, color, type) {
-        if(type === TILE.COIN) {
-            return this.add.text(
-                x * TILE_SIZE + 4,
-                y * TILE_SIZE - 2,
-                "¢",
-                { fontSize: "12px", color: "#ffff00" }
-            ).setOrigin(0);
-        }
+    // buildTile(x, y, color, type) {
+    //     if(type === TILE.COIN) {
+    //         return this.add.text(
+    //             x * TILE_SIZE + 4,
+    //             y * TILE_SIZE - 2,
+    //             "¢",
+    //             { fontSize: "12px", color: "#ffff00" }
+    //         ).setOrigin(0);
+    //     }
 
-        return this.add.rectangle(
-            x * TILE_SIZE,
-            y * TILE_SIZE,
-            TILE_SIZE,
-            TILE_SIZE,
-            color
+    //     return this.add.rectangle(
+    //         x * TILE_SIZE,
+    //         y * TILE_SIZE,
+    //         TILE_SIZE,
+    //         TILE_SIZE,
+    //         color
+    //     ).setOrigin(0);
+    // }
+
+    buildTile(x, y, type) {
+
+    let key = null;
+
+    if (type === TILE.DIRT) key = "dirt";
+    if (type === TILE.STONE) key = "stone";
+    if (type === TILE.GOLD) key = "gold";
+    if (type === TILE.IRON) key = "iron";
+    if (type === TILE.WATER) key = "water";
+
+    if (type === TILE.COIN) {
+        return this.add.text(
+            x * TILE_SIZE + 4,
+            y * TILE_SIZE - 2,
+            "¢",
+            { fontSize: "12px", color: "#ffff00" }
         ).setOrigin(0);
     }
 
+    return this.add.image(
+        x * TILE_SIZE,
+        y * TILE_SIZE,
+        key
+    ).setOrigin(0);
+}
+
     dig() {
-    const px = Math.floor(this.player.x / TILE_SIZE);
-    const py = Math.floor(this.player.y / TILE_SIZE);
+        const px = Math.floor(this.player.x / TILE_SIZE);
+        const py = Math.floor(this.player.y / TILE_SIZE);
 
-    let dx = 0;
-    let dy = 0;
+        let dx = 0;
+        let dy = 0;
 
-    if (this.cursors.left.isDown || this.keys.left.isDown) dx = -1;
-    else if (this.cursors.right.isDown || this.keys.right.isDown) dx = 1;
-    else if (this.cursors.up.isDown || this.keys.up.isDown) dy = -1;
-    else if (this.cursors.down.isDown || this.keys.down.isDown) dy = 1;
-    else dx = this.facing;
+        if (this.cursors.left.isDown || this.keys.left.isDown) dx = -1;
+        else if (this.cursors.right.isDown || this.keys.right.isDown) dx = 1;
+        else if (this.cursors.up.isDown || this.keys.up.isDown) dy = -1;
+        else if (this.cursors.down.isDown || this.keys.down.isDown) dy = 1;
+        else dx = this.facing;
 
 
-    const tx = px + dx;
-    const ty = py + dy;
+        const tx = px + dx;
+        const ty = py + dy;
 
-    if (
-        tx < 0 || tx >= MAP_WIDTH ||
-        ty < 0 || ty >= MAP_HEIGHT
-    ) return;
+        if (
+            tx < 0 || tx >= MAP_WIDTH ||
+            ty < 0 || ty >= MAP_HEIGHT
+        ) return;
 
-    const tileType = this.map[ty][tx];
-    if (tileType === TILE.EMPTY) return;
+        const tileType = this.map[ty][tx];
+        if (tileType === TILE.EMPTY) return;
 
-    const tile = this.tiles.getChildren().find(t =>
-        t.tileX === tx && t.tileY === ty
-    );
-    if (!tile) return;
+        const tile = this.tiles.getChildren().find(t =>
+            t.tileX === tx && t.tileY === ty
+        );
+        if (!tile) return;
 
-    tile.hp -= this.playerStats.digPower;
+        tile.hp -= this.playerStats.digPower;
 
         this.tweens.add({
-        targets: tile,
-        scaleX: 0.85,
-        scaleY: 0.85,
-        duration: 50,
-        yoyo: true
+            targets: tile,
+            scaleX: 0.85,
+            scaleY: 0.85,
+            duration: 50,
+            yoyo: true
         });
 
-    tile.scaleX = tile.hp / 4;
-    tile.scaleY = tile.hp / 4;
+        tile.scaleX = tile.hp / 4;
+        tile.scaleY = tile.hp / 4;
 
-    if (tile.hp <= 0) {
-        this.map[ty][tx] = TILE.EMPTY;
-        this.tiles.remove(tile, true, true);
+        if (tile.hp <= 0) {
+            this.map[ty][tx] = TILE.EMPTY;
+            this.tiles.remove(tile, true, true);
 
-        if (tile.tileType === TILE.COIN) {
-        notyf.success("You found a coin! +1¢");
-        this.coins += 1;
+            if (tile.tileType === TILE.COIN) {
+                notyf.success("You found a coin! +1¢");
+                this.coins += 1;
+            }
+
+            if (tile.tileType === TILE.GOLD) {
+                this.addItemToInventory(ITEM.GOLD, 1);
+            }
+
+            if (tile.tileType === TILE.IRON) {
+                    this.addItemToInventory(ITEM.IRON, 1);
+            }
         }
-
-        if (tile.tileType === TILE.GOLD) {
-        this.addItemToInventory(ITEM.GOLD, 1);
-        }
-
-        if (tile.tileType === TILE.IRON) {
-        this.addItemToInventory(ITEM.IRON, 1);
-        }
-    }
         this.particles.emitParticleAt(
-        tile.x + TILE_SIZE / 2,
-        tile.y + TILE_SIZE / 2
+            tile.x + TILE_SIZE / 2,
+            tile.y + TILE_SIZE / 2
         );
     }
 
     update() {
         this.hudText.setText(
-            `Coins: ${this.coins}\nDig Power: ${this.digPower}`
+            `Coins: ${this.coins}\nDig Power: ${this.playerStats.digPower}`
         );
+
+        const speed = 140;
+        this.player.body.setVelocityX(0);
 
         // apertou E perto da loja
         this.buyUpgrade();
         this.sellGems()
         this.handleSave();
         this.handleLoad();
+        this.handleDig();
+        this.handleMovements(speed);
 
-        const speed = 140;
+        // if (Phaser.Input.Keyboard.JustDown(this.digKey)) {
+        //     this.dig();
+        // }
+    }
+
+    // handleMovements(speed) {
+    //     if (this.cursors.left.isDown || this.keys.left.isDown) {
+    //         this.player.body.setVelocityX(-speed);
+    //         this.facing = -1;
+    //     }
+
+    //     // direita
+    //     if (this.cursors.right.isDown || this.keys.right.isDown) {
+    //         this.player.body.setVelocityX(speed);
+    //         this.facing = 1;
+    //     }
+
+    //     // pulo
+    //     if ((this.cursors.up.isDown || this.keys.up.isDown) &&
+    //         this.player.body.blocked.down) {
+    //         this.player.body.setVelocityY(-320);
+    //     }
+    // }
+
+//     handleMovements(speed) {
+
+//     this.player.body.setVelocityX(0);
+//     this.player.anims.play("idle", true);
+
+//     if (this.cursors.left.isDown || this.keys.left.isDown) {
+//         this.player.body.setVelocityX(-speed);
+//         this.player.setFlipX(false);
+//         this.player.anims.play("walk", true);
+//         // this.facing = -1;
+//     }
+//     if (this.cursors.right.isDown || this.keys.right.isDown) {
+//         this.player.body.setVelocityX(speed);
+//         this.player.setFlipX(true);
+//         this.player.anims.play("walk", true);
+//         // this.facing = 1;
+//     }
+//     if ((this.cursors.up.isDown || this.keys.up.isDown) &&
+//         this.player.body.blocked.down) {
+//         this.player.body.setVelocityY(-320);
+//     }
+//     // else {
+//     //     this.player.anims.play("idle", true);
+//     // }
+// }
+
+handleMovements(speed) {
+    this.player.body.setVelocityX(0);
+
+    if (this.cursors.left.isDown || this.keys.left.isDown) {
+        this.player.body.setVelocityX(-speed);
+        this.player.setFlipX(false); // Mantém original
+        this.player.anims.play("walk", true);
+    } 
+    else if (this.cursors.right.isDown || this.keys.right.isDown) {
+        this.player.body.setVelocityX(speed);
+        this.player.setFlipX(true); // Inverte horizontalmente
+        this.player.anims.play("walk", true);
+    } 
+    else {
         this.player.body.setVelocityX(0);
+        this.player.anims.play("idle", true);
+    }
 
+    // Pulo
+    if ((this.cursors.up.isDown || this.keys.up.isDown) && this.player.body.blocked.down) {
+        this.player.body.setVelocityY(-320);
+    }
+}
+
+
+    handleDig() {
         if (Phaser.Input.Keyboard.JustDown(this.digKey)) {
             this.dig();
         }
-
-        // esquerda
-        if (this.cursors.left.isDown || this.keys.left.isDown) {
-            this.player.body.setVelocityX(-speed);
-            this.facing = -1;
-        }
-
-        // direita
-        if (this.cursors.right.isDown || this.keys.right.isDown) {
-            this.player.body.setVelocityX(speed);
-            this.facing = 1;
-        }
-
-        // pulo
-        if (
-        (this.cursors.up.isDown || this.keys.up.isDown) &&
-        this.player.body.blocked.down
-        ) {
-        this.player.body.setVelocityY(-320);
-        }
-
-        if (Phaser.Input.Keyboard.JustDown(this.digKey)) {
-        this.dig();
-        }
     }
 
+    //early return for better readability
     handleSave() {
-        if (Phaser.Input.Keyboard.JustDown(this.saveKey)) {
-            this.saveState();
+        if (!Phaser.Input.Keyboard.JustDown(this.saveKey)) {
+            return;
         }
+        this.saveState();
     }
 
     handleLoad() {
-        if (Phaser.Input.Keyboard.JustDown(this.loadKey)) {
-            this.loadState();
+        if (!Phaser.Input.Keyboard.JustDown(this.loadKey)) {
+            return;
         }
+        this.loadState();
     }
 
     buyUpgrade() {
-        if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
-            const price = this.digPower * 10;
-
-            if (this.coins >= price) {
-                this.coins -= price;
-                this.digPower += 1;
-
-                notyf.success(`Upgrade de picareta comprado! Dig Power: ${this.digPower}`);
-
-            } else {
-                notyf.error("Moedas insuficientes");
-            }
+        if (!Phaser.Input.Keyboard.JustDown(this.keyE)) {
+            return;
         }
+
+        const price = this.playerStats.digPower * 5; // preço aumenta a cada upgrade
+
+        if (this.coins >= price) {
+            this.coins -= price;
+            this.playerStats.digPower += 1;
+
+            notyf.success(messages.upgradeBought(this.playerStats.digPower));
+        } else {
+            notyf.error(messages.notEnoughCoins);
+        }
+        
     }
 
 
     //refactor: reestruturar a estrutura de dados de itens para manipulação mais fácil
     sellGems(){
         if (Phaser.Input.Keyboard.JustDown(this.keyR)) {
-            if( this.inventory.every(slot => slot.item === null)) {
-                notyf.error("Nenhum item para vender!");
+            if(this.inventory.every(slot => slot.item === null)) {
+                notyf.error(messages.noItemsToSell);
                 return;
             }
 
