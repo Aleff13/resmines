@@ -2,7 +2,7 @@ const TILE_SIZE = 16;
 const MAP_WIDTH = 100;
 const MAP_HEIGHT = 1000;
 const MAX_STACK = 8;
-const HOTBAR_SLOTS = 5;
+const HOTBAR_SLOTS = 2;
 
 const ITEM = {
   GOLD: "gold",
@@ -67,11 +67,26 @@ class GameScene extends Phaser.Scene {
             frameHeight: 144
         });
 
+        this.load.spritesheet("player_fall", "assets/player/knight/Fall.png", {
+            frameWidth: 144,
+            frameHeight: 144
+        });
+
+        this.load.spritesheet("coins", "assets/tiles/coin.png", {
+            frameWidth: 16,
+            frameHeight: 16
+        });
+
         this.load.image("dirt", "assets/tiles/dirt.png");
         this.load.image("stone", "assets/tiles/stone.png");
         this.load.image("gold", "assets/tiles/gold.png");
         this.load.image("iron", "assets/tiles/iron.png");
         this.load.image("water", "assets/tiles/water.png");
+
+        this.load.audio("slash", "assets/sounds/slash.wav");
+        this.load.audio("background_music", "assets/sounds/background.wav");
+        this.load.audio("footsteps", "assets/sounds/footsteps.wav");
+
     }
 
     //todo: refactor save/load to be more efficient encripting the map to improve performance and reduce storage space, maybe using a simple RLE compression for the map data
@@ -161,6 +176,7 @@ class GameScene extends Phaser.Scene {
         this.digDir = { x: 0, y: 0 };
         this.coins = 0;
         this.isAttacking = false;
+        this.isWalkingSoundPlaying = false;
 
         // this.playerStats.digPower = 1;
 
@@ -206,6 +222,16 @@ class GameScene extends Phaser.Scene {
                 quantity: 0
             });
         }
+
+        this.anims.create({
+            key: "coin_anim",
+            frames: this.anims.generateFrameNumbers("coins", {
+                start: 0,
+                end: 6
+            }),
+            frameRate: 7,
+            repeat: -1
+        });
 
         for (let y = 0; y < MAP_HEIGHT; y++) {
         this.map[y] = [];
@@ -293,15 +319,43 @@ class GameScene extends Phaser.Scene {
             repeat: 0
         });
 
+        this.anims.create({
+            key: "fall",
+            frames: this.anims.generateFrameNumbers("player_fall", {
+                start: 0,
+                end: 3
+            }),
+            frameRate: 4,
+            repeat: -1
+        });
+
+
+
         this.player = this.physics.add.sprite(
             MAP_WIDTH * TILE_SIZE * 0.5,
             1 * TILE_SIZE,
             "player_idle"
         );
 
-        this.player.setScale(0.7);
+        this.player.setScale(0.8);
         this.player.setCollideWorldBounds(true);
         this.player.body.setGravityY(700);
+
+        this.slashSound = this.sound.add("slash", {
+            volume: 0.5
+        });
+
+        this.footstepsSound = this.sound.add("footsteps", {
+            volume: 0.8,
+            loop: true
+        });
+
+        this.backgroundMusic = this.sound.add("background_music", {
+            volume: 0.4,
+            loop: true,
+        });
+        this.backgroundMusic.play();
+
         // this.player = this.add.rectangle(
         //     MAP_WIDTH * TILE_SIZE * 0.5,
         //     5 * TILE_SIZE,
@@ -315,7 +369,7 @@ class GameScene extends Phaser.Scene {
         this.player.body.setGravityY(700);
         this.player.body.setCollideWorldBounds(true);
         this.physics.add.existing(this.player);
-        this.player.body.setSize(15, 20); // Tamanho da caixa de colisão (menor que o sprite)
+        this.player.body.setSize(15, 18); // Tamanho da caixa de colisão (menor que o sprite)
         // this.player.body.setOffset(10, 10);
 
         this.physics.add.collider(this.player, this.tiles);
@@ -334,6 +388,10 @@ class GameScene extends Phaser.Scene {
         this.cursors = this.input.keyboard.createCursorKeys();
         this.digKey = this.input.keyboard.addKey(
         Phaser.Input.Keyboard.KeyCodes.X
+        );
+        //shift key
+        this.shiftKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.SHIFT
         );
 
         /* =================================================
@@ -462,8 +520,7 @@ class GameScene extends Phaser.Scene {
         if(type === TILE.WATER) {
             this.waterTiles.add(tile);
         }
-        else
-            {
+        else if (type !== TILE.COIN) {
             this.physics.add.existing(tile, true);
             this.tiles.add(tile);
         }
@@ -499,13 +556,41 @@ class GameScene extends Phaser.Scene {
     if (type === TILE.IRON) key = "iron";
     if (type === TILE.WATER) key = "water";
 
+    // if (type === TILE.COIN) {
+    //     return this.add.text(
+    //         x * TILE_SIZE,
+    //         y * TILE_SIZE,
+    //         "¢",
+    //         { fontSize: "12px", color: "#ffff00" }
+    //     ).setOrigin(0);
+    // }
+
     if (type === TILE.COIN) {
-        return this.add.text(
-            x * TILE_SIZE + 4,
-            y * TILE_SIZE - 2,
-            "¢",
-            { fontSize: "12px", color: "#ffff00" }
-        ).setOrigin(0);
+        const coin = this.physics.add.staticSprite(
+            x * TILE_SIZE + TILE_SIZE / 2,
+            y * TILE_SIZE + TILE_SIZE / 2,
+            "coins"
+        );
+
+        coin.setOrigin(0.5);
+        coin.anims.play("coin_anim", true);
+
+        this.tweens.add({
+            targets: coin,
+            y: coin.y - 2,
+            duration: 1000,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.easeInOut"
+        });
+
+        coin.tileX = x;
+        coin.tileY = y;
+        coin.tileType = type;
+        coin.hp = 1;
+
+        this.tiles.add(coin);
+        return coin;
     }
 
     return this.add.image(
@@ -595,7 +680,7 @@ class GameScene extends Phaser.Scene {
         this.handleSave();
         this.handleLoad();
         this.handleDig();
-        this.handleMovements(speed);
+        this.handleMovements();
 
         // if (Phaser.Input.Keyboard.JustDown(this.digKey)) {
         //     this.dig();
@@ -647,10 +732,15 @@ class GameScene extends Phaser.Scene {
 //     // }
 // }
 
-handleMovements(speed) {
+handleMovements() {
+
+    
+    const isRunning = this.shiftKey.isDown;
+    const speed = isRunning ? 200 : 100;
+    const timeScaleWalkingAnim = isRunning ? 1.8 : 1;
 
     if (this.isAttacking) {
-        this.player.setVelocityX(0);
+        // this.player.setVelocityX(0);
         return;
     }
 
@@ -677,14 +767,34 @@ handleMovements(speed) {
     // 🎬 CONTROLE DE ANIMAÇÃO (SEPARADO DO MOVIMENTO)
 
     if (!onGround) {
-        // Está no ar → trava jump
         this.player.anims.play("jump", true);
+
+        if (this.isWalkingSoundPlaying) {
+            this.footstepsSound.stop();
+            this.isWalkingSoundPlaying = false;
+        }
     }
     else if (this.player.body.velocity.x !== 0) {
         this.player.anims.play("walk", true);
+
+        this.player.anims.timeScale = timeScaleWalkingAnim;
+
+        this.footstepsSound.setVolume(
+            Math.abs(this.player.body.velocity.x) / 200
+        );
+
+        if (!this.isWalkingSoundPlaying) {
+            this.footstepsSound.play();
+            this.isWalkingSoundPlaying = true;
+        }
     }
-    else {
+    else if (this.player.body.velocity.x === 0) {
         this.player.anims.play("idle", true);
+
+        if (this.isWalkingSoundPlaying) {
+            this.footstepsSound.stop();
+            this.isWalkingSoundPlaying = false;
+        }
     }
 }
 
@@ -702,15 +812,14 @@ handleDig() {
         this.player.anims.play("attack", true);
 
         this.dig();
+        this.slashSound.play();
 
-        // Quando animação terminar
         this.player.once("animationcomplete-attack", () => {
             this.isAttacking = false;
         });
     }
 }
 
-    //early return for better readability
     handleSave() {
         if (!Phaser.Input.Keyboard.JustDown(this.saveKey)) {
             return;
